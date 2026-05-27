@@ -524,11 +524,20 @@ def switch_tab_trick_until_clear(tabs, rounds=5, pause=0.2):
         "//input[@placeholder='Select an Equipment Type']"
         " | //div[contains(@class,'RouteInput_wrap-error-loading')]"
         " | //p[contains(text(),'No port pair')]"
+        " | //input[@type='password']"
     )
     for i, tab in enumerate(tabs):
         driver.switch_to.window(tab)
+        # Kiểm tra nếu trang đang ở login page → skip chờ form
         try:
-            WebDriverWait(driver, 30).until(
+            cur_url = driver.current_url or ""
+            if "login" in cur_url.lower() or "auth" in cur_url.lower() or "sso" in cur_url.lower():
+                print(f"  ⚠️ Tab {i+1}: đang ở trang login — skip chờ form")
+                continue
+        except:
+            pass
+        try:
+            WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.XPATH, PAGE_READY_XPATH))
             )
             print(f"  ✅ Tab {i+1}: form sẵn sàng")
@@ -541,12 +550,12 @@ def switch_tab_trick_until_clear(tabs, rounds=5, pause=0.2):
                     break
             driver.switch_to.window(tab)
             try:
-                WebDriverWait(driver, 15).until(
+                WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.XPATH, PAGE_READY_XPATH))
                 )
                 print(f"  ✅ Tab {i+1}: form sẵn sàng (sau retry)")
             except TimeoutException:
-                print(f"  ⚠️ Tab {i+1}: timeout sau 45s — tiếp tục (sẽ handle trong scrape_tab)")
+                print(f"  ⚠️ Tab {i+1}: timeout — tiếp tục (sẽ handle trong scrape_tab)")
 
     print("✅ Tất cả tab sạch popup!")
 
