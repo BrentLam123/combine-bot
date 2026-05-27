@@ -174,14 +174,16 @@ def apply_9_golden_rules(danh_sach_chuyen):
                 etd_dat_chuan.append(c)
 
     # Format ETD string
+    def _fmt_etd(dt):
+        return f"{dt.day}-{dt.strftime('%b')}"
     num = len(etd_dat_chuan)
     if num == 0:   str_etd = "N/A"
-    elif num == 1: str_etd = etd_dat_chuan[0]["etd_dt"].strftime("%d-%b")
-    elif num == 2: str_etd = f"{etd_dat_chuan[0]['etd_dt'].strftime('%d-%b')} & {etd_dat_chuan[1]['etd_dt'].strftime('%d-%b')}"
+    elif num == 1: str_etd = _fmt_etd(etd_dat_chuan[0]["etd_dt"])
+    elif num == 2: str_etd = f"{_fmt_etd(etd_dat_chuan[0]['etd_dt'])} & {_fmt_etd(etd_dat_chuan[1]['etd_dt'])}"
     else:
-        d1 = etd_dat_chuan[0]["etd_dt"].strftime("%d")
-        d2 = etd_dat_chuan[1]["etd_dt"].strftime("%d")
-        d3 = etd_dat_chuan[2]["etd_dt"].strftime("%d-%b")
+        d1 = str(etd_dat_chuan[0]["etd_dt"].day)
+        d2 = str(etd_dat_chuan[1]["etd_dt"].day)
+        d3 = _fmt_etd(etd_dat_chuan[2]["etd_dt"])
         str_etd = f"{d1}, {d2}, {d3}"
 
     all_tt = [c["tt_days"] for c in etd_dat_chuan]
@@ -294,13 +296,25 @@ def search_one(port_from, port_to):
             "price_20": None, "price_40": None, "price_40hq": None,
             "remark": "", "error": None}
     try:
-        # ── Nhập FROM ──
+        # ── Nhập FROM (thử row 1 XPath, fallback row 2 XPath) ──
         print(f"   📍 Nhập FROM: {port_from}")
-        select_port_emc('//input[@aria-label="input for From"]', port_from)
+        from_xpath_1 = '//input[@aria-label="input for From"]'
+        from_xpath_2 = '//input[@aria-label="input for Origin"]'
+        try:
+            select_port_emc(from_xpath_1, port_from)
+        except Exception:
+            print(f"   🔄 Thử XPath row 2 cho FROM...")
+            select_port_emc(from_xpath_2, port_from)
 
-        # ── Nhập TO ──
+        # ── Nhập TO (thử row 1 XPath, fallback row 2 XPath) ──
         print(f"   📍 Nhập TO: {port_to}")
-        select_port_emc('//input[@aria-label="input for To"]', port_to)
+        to_xpath_1 = '//input[@aria-label="input for To"]'
+        to_xpath_2 = '//input[@aria-label="input for Destination"]'
+        try:
+            select_port_emc(to_xpath_1, port_to)
+        except Exception:
+            print(f"   🔄 Thử XPath row 2 cho TO...")
+            select_port_emc(to_xpath_2, port_to)
 
         # ── Chọn số lượng cont = 1 ──
         print(f"   📦 Kiểm tra số lượng cont...")
@@ -483,13 +497,25 @@ first_emc_row = None
 # FIX: Luôn navigate về trang chủ khi bắt đầu script → đảm bảo clean state cho cả lần chạy thứ 2
 print("[HỆ THỐNG] Đang khởi tạo: navigate về https://portal.greenxtrade.com/ ...")
 try:
+    # Đóng tất cả tab thừa, chỉ giữ 1 tab
+    _handles = driver.window_handles
+    if len(_handles) > 1:
+        print(f"[HỆ THỐNG] Phát hiện {len(_handles)} tab — đóng bớt...")
+        for _h in _handles[1:]:
+            try:
+                driver.switch_to.window(_h)
+                driver.close()
+            except:
+                pass
+        driver.switch_to.window(_handles[0])
+
     driver.get("https://portal.greenxtrade.com/")
     time.sleep(2)
-    # Chuyển sang trang quotes nếu chưa tự redirect
     if "portal.greenxtrade.com" in driver.current_url and "/quotes" not in driver.current_url:
         driver.get(BASE_URL)
     WebDriverWait(driver, 20).until(
-        EC.presence_of_element_located((By.XPATH, '//input[@aria-label="input for From"]'))
+        lambda d: d.find_elements(By.XPATH, '//input[@aria-label="input for From"]')
+               or d.find_elements(By.XPATH, '//input[@aria-label="input for Origin"]')
     )
     print("[HỆ THỐNG] ✅ Trang quotes đã load xong — bắt đầu vòng lặp.")
 except Exception as _e:
@@ -497,10 +523,19 @@ except Exception as _e:
     try:
         driver.get(BASE_URL)
         WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.XPATH, '//input[@aria-label="input for From"]'))
+            lambda d: d.find_elements(By.XPATH, '//input[@aria-label="input for From"]')
+                   or d.find_elements(By.XPATH, '//input[@aria-label="input for Origin"]')
         )
     except Exception as _e2:
         print(f"[HỆ THỐNG] ❌ Không mở được trang EMC: {_e2}")
+
+# Port mapping: Excel name → EMC search name
+EMC_PORT_MAPPING = {
+    "TIANJIN": "XINGANG",
+    "FOS SUR MER": "FOS",
+    "GENOA": "GENOVA",
+    "NAPOLI": "NAPLES",
+}
 
 for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
     pol_excel = str(row[2] or "").strip().title()   # cột C = POL
@@ -511,6 +546,10 @@ for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
     if carrier not in EMC_GROUP: continue
     if FILTER_POL and pol_excel.upper() != FILTER_POL: continue
     if FILTER_POD and pod.upper() != FILTER_POD: continue
+
+    # Áp dụng port mapping cho search (giữ tên gốc trong Excel)
+    pol_excel = EMC_PORT_MAPPING.get(pol_excel.upper(), pol_excel)
+    pod = EMC_PORT_MAPPING.get(pod.upper(), pod)
     if first_emc_row is None:
         first_emc_row = i
 
@@ -519,16 +558,16 @@ for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
 
     # FIX: Chỉ navigate lần đầu (lần sau dùng lại form đang hiện)
     if i == first_emc_row:
-        # Đã navigate ở trên, chỉ cần đảm bảo form đang hiện
         try:
             WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, '//input[@aria-label="input for From"]'))
+                lambda d: d.find_elements(By.XPATH, '//input[@aria-label="input for From"]')
+                       or d.find_elements(By.XPATH, '//input[@aria-label="input for Origin"]')
             )
         except:
-            # Nếu form biến mất (bị redirect lạ), navigate lại
             driver.get(BASE_URL)
             WebDriverWait(driver, 15).until(
-                EC.presence_of_element_located((By.XPATH, '//input[@aria-label="input for From"]'))
+                lambda d: d.find_elements(By.XPATH, '//input[@aria-label="input for From"]')
+                       or d.find_elements(By.XPATH, '//input[@aria-label="input for Origin"]')
             )
         driver.switch_to.window(driver.current_window_handle)
         driver.execute_script("window.focus();")

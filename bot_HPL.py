@@ -252,7 +252,8 @@ def reload_tab():
 def fmt_date(raw):
     for fmt in ("%Y-%m-%d", "%d %b %Y", "%d-%b-%Y"):
         try:
-            return datetime.strptime(raw.strip(), fmt).strftime("%d-%b")
+            dt = datetime.strptime(raw.strip(), fmt)
+            return f"{dt.day}-{dt.strftime('%b')}"
         except:
             continue
     return raw.strip()
@@ -366,47 +367,72 @@ def set_date_hpl():
 # ===================================================================================
 # --- KIỂM TRA SECURITY CHECK ---
 # ===================================================================================
-def check_security_block(tab_idx):
+def _is_security_page():
+    """Kiểm tra xem trang hiện tại có phải là trang Security Check không."""
     try:
-        url = driver.current_url or ""
-        if "security" in url.lower() or "challenge" in url.lower():
-            print(f"   [Tab{tab_idx}] ⚠️ Phát hiện chặn Security Check!")
-            if not os.environ.get("EXCEL_PATH"):
-                input(f"   >>> Hãy tự tick xác thực trên Tab {tab_idx}, chờ web load xong rồi nhấn [ENTER] tại đây để tiếp tục... <<<")
-            else:
-                print(f"   [Tab{tab_idx}] ⏳ Chạy qua main.py — chờ 90s để user giải captcha...")
-                time.sleep(90)
-            # FIX: Sau khi giải captcha, reload từ BASE_URL để reset form → tránh bị detect lại
-            print(f"   [Tab{tab_idx}] 🔄 Reload BASE_URL sau khi giải captcha...")
-            try:
-                driver.get(BASE_URL)
-                WebDriverWait(driver, 30).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, 'input[data-testid="start-input"]'))
-                )
-                print(f"   [Tab{tab_idx}] ✅ Form sẵn sàng sau captcha.")
-            except Exception as _reload_err:
-                print(f"   [Tab{tab_idx}] ⚠️ Reload sau captcha gặp lỗi: {_reload_err}")
-            return
-        title = driver.title or ""
+        url = (driver.current_url or "").lower()
+        if "security" in url or "challenge" in url:
+            return True
+        title = (driver.title or "")
         if "Security" in title and "Check" in title:
-            print(f"   [Tab{tab_idx}] ⚠️ Phát hiện chặn Security Check!")
-            if not os.environ.get("EXCEL_PATH"):
-                input(f"   >>> Hãy tự tick xác thực trên Tab {tab_idx}, chờ web load xong rồi nhấn [ENTER] tại đây để tiếp tục... <<<")
-            else:
-                print(f"   [Tab{tab_idx}] ⏳ Chạy qua main.py — chờ 90s để user giải captcha...")
-                time.sleep(90)
-            # FIX: Reload sau captcha
-            print(f"   [Tab{tab_idx}] 🔄 Reload BASE_URL sau khi giải captcha...")
-            try:
-                driver.get(BASE_URL)
-                WebDriverWait(driver, 30).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, 'input[data-testid="start-input"]'))
-                )
-                print(f"   [Tab{tab_idx}] ✅ Form sẵn sàng sau captcha.")
-            except Exception as _reload_err:
-                print(f"   [Tab{tab_idx}] ⚠️ Reload sau captcha gặp lỗi: {_reload_err}")
+            return True
     except:
         pass
+    return False
+
+def _do_tab_switch_stealth():
+    """Switch sang tab khác rồi quay lại để phá vỡ bot-detection pattern."""
+    try:
+        handles = driver.window_handles
+        current = driver.current_window_handle
+        for h in handles:
+            if h != current:
+                driver.switch_to.window(h)
+                time.sleep(random.uniform(0.3, 0.7))
+                driver.switch_to.window(current)
+                break
+    except:
+        pass
+
+def check_security_block(tab_idx):
+    if not _is_security_page():
+        return
+    print(f"   [Tab{tab_idx}] ⚠️ Phát hiện chặn Security Check!")
+    if not os.environ.get("EXCEL_PATH"):
+        input(f"   >>> Hãy tự tick xác thực trên Tab {tab_idx}, chờ web load xong rồi nhấn [ENTER] tại đây để tiếp tục... <<<")
+    else:
+        print(f"   [Tab{tab_idx}] ⏳ Chạy qua main.py — chờ 90s để user giải captcha...")
+        time.sleep(90)
+
+    # Sau khi giải captcha, switch tab liên tục để reset focus state
+    _do_tab_switch_stealth()
+    time.sleep(random.uniform(1.0, 2.0))
+
+    # Re-inject stealth script sau mỗi lần giải captcha
+    try:
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(document, 'visibilityState', {get: () => 'visible'});
+                Object.defineProperty(document, 'hidden', {get: () => false});
+                document.addEventListener('visibilitychange', e => e.stopImmediatePropagation(), true);
+            """
+        })
+    except:
+        pass
+
+    print(f"   [Tab{tab_idx}] 🔄 Reload BASE_URL sau khi giải captcha...")
+    try:
+        driver.get(BASE_URL)
+        WebDriverWait(driver, 30).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, 'input[data-testid="start-input"]'))
+        )
+        # Reset last POL/POD cache vì form đã reload
+        tab_last_pol[tab_idx - 1] = None
+        tab_last_pod[tab_idx - 1] = None
+        print(f"   [Tab{tab_idx}] ✅ Form sẵn sàng sau captcha.")
+    except Exception as _reload_err:
+        print(f"   [Tab{tab_idx}] ⚠️ Reload sau captcha gặp lỗi: {_reload_err}")
 
 # ===================================================================================
 # --- NHẬP & SEARCH ---
@@ -414,6 +440,10 @@ def check_security_block(tab_idx):
 def do_search(pol, pod, tab_idx):
     global cookie_dismissed
     t = tab_idx - 1  # 0-based index
+
+    # Switch tab liên tục trước mỗi search để phá bot-detection
+    _do_tab_switch_stealth()
+    rand_sleep(0.5, 1.5)
 
     print(f"   [Tab{tab_idx}] 📍 Nhập {pol} → {pod}")
     check_security_block(tab_idx)
@@ -853,15 +883,17 @@ def apply_9_golden_rules(danh_sach_chuyen):
             if (c["etd_dt"] - first_date).days <= 9 and c["tt_days"] <= ngan_nhat + 10:
                 etd_dat_chuan.append(c)
 
+    def _fmt_etd(dt):
+        return f"{dt.day}-{dt.strftime('%b')}"
     num = len(etd_dat_chuan)
     if num == 0:   str_etd = "N/A"
-    elif num == 1: str_etd = etd_dat_chuan[0]["etd_dt"].strftime("%d-%b")
-    elif num == 2: str_etd = (f"{etd_dat_chuan[0]['etd_dt'].strftime('%d-%b')} & "
-                              f"{etd_dat_chuan[1]['etd_dt'].strftime('%d-%b')}")
+    elif num == 1: str_etd = _fmt_etd(etd_dat_chuan[0]["etd_dt"])
+    elif num == 2: str_etd = (f"{_fmt_etd(etd_dat_chuan[0]['etd_dt'])} & "
+                              f"{_fmt_etd(etd_dat_chuan[1]['etd_dt'])}")
     else:
-        d1 = etd_dat_chuan[0]["etd_dt"].strftime("%d")
-        d2 = etd_dat_chuan[1]["etd_dt"].strftime("%d")
-        d3 = etd_dat_chuan[2]["etd_dt"].strftime("%d-%b")
+        d1 = str(etd_dat_chuan[0]["etd_dt"].day)
+        d2 = str(etd_dat_chuan[1]["etd_dt"].day)
+        d3 = _fmt_etd(etd_dat_chuan[2]["etd_dt"])
         str_etd = f"{d1}, {d2}, {d3}"
 
     all_tt = [c["tt_days"] for c in etd_dat_chuan]
@@ -1030,16 +1062,18 @@ def parse_hpl_price(tab_idx, pod=""):
 # ===================================================================================
 def format_etd_tt(etd_list):
     """Rebuild str_etd, str_tt từ danh sách ETD đã lọc."""
+    def _fmt(dt):
+        return f"{dt.day}-{dt.strftime('%b')}"
     num = len(etd_list)
     if num == 0: return "N/A", "N/A"
-    elif num == 1: s = etd_list[0]["etd_dt"].strftime("%d-%b")
+    elif num == 1: s = _fmt(etd_list[0]["etd_dt"])
     elif num == 2:
-        s = (f"{etd_list[0]['etd_dt'].strftime('%d-%b')} & "
-             f"{etd_list[1]['etd_dt'].strftime('%d-%b')}")
+        s = (f"{_fmt(etd_list[0]['etd_dt'])} & "
+             f"{_fmt(etd_list[1]['etd_dt'])}")
     else:
-        s = (f"{etd_list[0]['etd_dt'].strftime('%d')}, "
-             f"{etd_list[1]['etd_dt'].strftime('%d')}, "
-             f"{etd_list[2]['etd_dt'].strftime('%d-%b')}")
+        s = (f"{etd_list[0]['etd_dt'].day}, "
+             f"{etd_list[1]['etd_dt'].day}, "
+             f"{_fmt(etd_list[2]['etd_dt'])}")
     all_tt = [c["tt_days"] for c in etd_list]
     tt = str(min(all_tt)) if min(all_tt)==max(all_tt) else f"{min(all_tt)}-{max(all_tt)}"
     return s, tt
@@ -1154,11 +1188,11 @@ def get_price_and_save(row_i, tab_idx, wb, ws, job_pod=""):
         vessel_lines = []
         for e_info in best_etd_list:
             v_name = e_info.get("vessel", "")
-            e_date = e_info["etd_dt"].strftime("%d-%b").lstrip("0")
+            e_date = f"{e_info['etd_dt'].day}-{e_info['etd_dt'].strftime('%b')}"
             e_tt   = e_info.get("tt_days", "")
             e_ts   = e_info.get("transshipment", "")
             vessel_lines.append(
-                f"{v_name} / ETD: {e_date} / Transit time: {e_tt} Days / Transshipment: {e_ts}"
+                f"{v_name} / ETD: {e_date} / Transit time: {e_tt} Days / Transshipment Port: {e_ts}"
             )
         ws.cell(row=row_i, column=15).value = "\n".join(vessel_lines)
 
@@ -1276,6 +1310,14 @@ if freetime_map:
         pass
 
 row_queue = []
+# Port mapping: Excel name → HPL search name (POD)
+HPL_POD_MAPPING = {
+    "TIANJIN": "Xingang",
+    "FOS SUR MER": "Fos",
+    "GENOA": "Genova",
+    "NAPOLI": "Naples",
+}
+
 for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
     pol_excel = str(row[2] or "").strip().upper()
     pod       = str(row[3] or "").strip().title()
@@ -1285,6 +1327,8 @@ for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
     if FILTER_POL and pol_excel != FILTER_POL: continue
     if FILTER_POD and pod.upper() != FILTER_POD: continue
     pol_search = POL_MAP.get(pol_excel, pol_excel.title())
+    # Áp dụng port mapping cho POD search
+    pod = HPL_POD_MAPPING.get(pod.upper(), pod)
     row_queue.append((i, pol_search, pod))
 
 # Sort theo POL → cùng POL liên tiếp nhau → skip nhập lại POL, tiết kiệm thời gian

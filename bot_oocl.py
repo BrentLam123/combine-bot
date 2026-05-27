@@ -1180,10 +1180,11 @@ class OOCLCombinedBot(OOCLBaseScraper):
                 transit_list.append(int(item["transit"]))
 
             if item.get("vessel"):
+                _etd_dt = datetime.strptime(item['date_str'], '%Y-%m-%d')
                 vessel_lines.append(
-                    f"{item['vessel']} / ETD: {datetime.strptime(item['date_str'], '%Y-%m-%d').strftime('%d-%b')} / "
+                    f"{item['vessel']} / ETD: {_etd_dt.day}-{_etd_dt.strftime('%b')} / "
                     f"Transit time: {item.get('transit', 0)} Days / "
-                    f"Transshipment: {item.get('transshipment') or 'DIRECT'}"
+                    f"Transshipment Port: {item.get('transshipment') or 'DIRECT'}"
                 )
 
             if item.get("transshipment"):
@@ -1196,7 +1197,7 @@ class OOCLCombinedBot(OOCLBaseScraper):
                 remark = item["remark"]
 
         valid_date = calculate_valid_for_espot(etd_dates)
-        valid_text = valid_date.strftime("%d-%b") if valid_date else ""
+        valid_text = f"{valid_date.day}-{valid_date.strftime('%b')}" if valid_date else ""
         etd_text   = format_etd_for_excel(etd_dates)
         transit_text = format_transit_for_excel(transit_list)
 
@@ -3294,7 +3295,7 @@ class OOCLCombinedBot(OOCLBaseScraper):
                 "price_40hq": best["total_40hq"],
                 "etd_text": "",
                 "transit_text": "",
-                "valid_text": best["validity_end"].strftime("%d-%b") if best.get("validity_end") else "",
+                "valid_text": f"{best['validity_end'].day}-{best['validity_end'].strftime('%b')}" if best.get("validity_end") else "",
                 "source": "E-Quote",
                 "remark": best["remark"],
                 "ft_pod": best["ft_pod"],
@@ -3375,7 +3376,7 @@ class OOCLCombinedBot(OOCLBaseScraper):
                 "price_40hq": best["total_40hq"],
                 "etd_text": format_etd_for_excel(etd_dates),
                 "transit_text": format_transit_for_excel(transit_list),
-                "valid_text": best["validity_end"].strftime("%d-%b") if best.get("validity_end") else "",
+                "valid_text": f"{best['validity_end'].day}-{best['validity_end'].strftime('%b')}" if best.get("validity_end") else "",
                 "source": "E-Quote",
                 "remark": best["remark"],
                 "ft_pod": best["ft_pod"],
@@ -3745,6 +3746,13 @@ class OOCLCombinedBot(OOCLBaseScraper):
         try:
             wb = openpyxl.load_workbook(path)
             ws = wb[sheet]
+            # Port mapping: Excel name → OOCL search name
+            OOCL_PORT_MAPPING = {
+                "TIANJIN": "XINGANG",
+                "FOS SUR MER": "FOS",
+                "GENOA": "GENOVA",
+                "NAPOLI": "NAPLES",
+            }
             for r_idx in range(2, ws.max_row + 1):
                 carrier = (ws.cell(row=r_idx, column=5).value or "").strip().upper()
                 pol     = (ws.cell(row=r_idx, column=3).value or "").strip()
@@ -3755,11 +3763,13 @@ class OOCLCombinedBot(OOCLBaseScraper):
                         continue
                     if FILTER_POD and pod.upper() != FILTER_POD:
                         continue
-                    # Nếu country trống, dùng FILTER_COUNTRY từ env var
                     if not country:
                         country = os.environ.get("FILTER_COUNTRY", "").strip().upper()
-                    rows.append({"row": r_idx, "pol": pol, "pod": pod, "country": country})
-                    print(f"[INFO] Row {r_idx}: POL={pol} POD={pod} COUNTRY={country}")
+                    # Áp dụng port mapping cho search (giữ tên gốc trong Excel output)
+                    pol_search = OOCL_PORT_MAPPING.get(pol.upper(), pol)
+                    pod_search = OOCL_PORT_MAPPING.get(pod.upper(), pod)
+                    rows.append({"row": r_idx, "pol": pol_search, "pod": pod_search, "country": country})
+                    print(f"[INFO] Row {r_idx}: POL={pol_search} POD={pod_search} COUNTRY={country}")
         except Exception as e:
             print(f"[ERROR] read_oocl_rows: {e}")
         return rows
