@@ -1474,9 +1474,6 @@ raw_data = df_filtered.dropna(
 # Port mapping: Excel name → ONE search name
 ONE_PORT_MAPPING = {
     "TIANJIN": "XINGANG",
-    "FOS SUR MER": "FOS",
-    "GENOA": "GENOVA",
-    "NAPOLI": "NAPLES",
 }
 # Áp dụng mapping cho POD (row[3]) trong raw_data — giữ tên gốc trong Excel output
 for _rd in raw_data:

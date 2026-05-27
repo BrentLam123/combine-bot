@@ -976,9 +976,6 @@ if __name__ == "__main__":
     # Port mapping: Excel name → MSC search name
     MSC_PORT_MAPPING = {
         "TIANJIN": "XINGANG",
-        "FOS SUR MER": "FOS",
-        "GENOA": "GENOVA",
-        "NAPOLI": "NAPLES",
     }
 
     for row_idx in range(2, sheet.max_row + 1):

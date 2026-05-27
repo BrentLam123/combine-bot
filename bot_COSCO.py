@@ -1725,11 +1725,7 @@ for row in danh_sach_dong:
 
     # --- BẮT ĐẦU THÊM: Chuẩn hóa tên cảng đặc biệt COSCO ---
     PORT_MAPPING = {
-        "FOS SUR MER": "FOS",
-        "GENOA": "GENOVA",
-        "NAPOLI": "NAPLES",
         "TIANJIN": "XINGANG",
-        "COCHIN": "KOCHI"
     }
     
     # Ép kiểu viết hoa, xóa khoảng trắng thừa và tra từ điển

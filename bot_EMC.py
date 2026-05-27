@@ -532,9 +532,6 @@ except Exception as _e:
 # Port mapping: Excel name → EMC search name
 EMC_PORT_MAPPING = {
     "TIANJIN": "XINGANG",
-    "FOS SUR MER": "FOS",
-    "GENOA": "GENOVA",
-    "NAPOLI": "NAPLES",
 }
 
 for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):

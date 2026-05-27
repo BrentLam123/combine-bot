@@ -1313,9 +1313,6 @@ row_queue = []
 # Port mapping: Excel name → HPL search name (POD)
 HPL_POD_MAPPING = {
     "TIANJIN": "Xingang",
-    "FOS SUR MER": "Fos",
-    "GENOA": "Genova",
-    "NAPOLI": "Naples",
 }
 
 for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):

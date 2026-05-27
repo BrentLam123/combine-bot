@@ -3749,9 +3749,6 @@ class OOCLCombinedBot(OOCLBaseScraper):
             # Port mapping: Excel name → OOCL search name
             OOCL_PORT_MAPPING = {
                 "TIANJIN": "XINGANG",
-                "FOS SUR MER": "FOS",
-                "GENOA": "GENOVA",
-                "NAPOLI": "NAPLES",
             }
             for r_idx in range(2, ws.max_row + 1):
                 carrier = (ws.cell(row=r_idx, column=5).value or "").strip().upper()

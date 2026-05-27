@@ -1745,9 +1745,6 @@ try:
     # Port mapping: Excel name → carrier search name
     CMA_PORT_MAPPING = {
         "TIANJIN": "XINGANG",
-        "FOS SUR MER": "FOS",
-        "GENOA": "GENOVA",
-        "NAPOLI": "NAPLES",
     }
 
     for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
