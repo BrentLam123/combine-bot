@@ -673,7 +673,7 @@ def run_synconhub(pol, pod, pod_country):
                 
             # Tổng hợp chuỗi
             str_ts = " + ".join(ts_ports) if ts_ports else "DIRECT"
-            str_etd_fmt = c["etd_dt"].strftime("%d-%b")
+            str_etd_fmt = f"{c['etd_dt'].day}-{c['etd_dt'].strftime('%b')}"
             str_tt_fmt = str(c["tt_days"])
             
             info_str = f"{vessel_name} / ETD: {str_etd_fmt} / Transit time: {str_tt_fmt} Days / Transshipment Port: {str_ts}"
@@ -754,11 +754,7 @@ def run_synconhub(pol, pod, pod_country):
             print(f"      ⚠️ [Synconhub] Lỗi Surcharge: {e}")
 
         if thc_inc:
-            print("      -> [Synconhub] Phát hiện ngậm THC. Lột THC ra...")
-            if rates["20GP"] is not None: rates["20GP"] -= 140
-            if rates["40GP"] is not None: rates["40GP"] -= 210
-            if rates["40HQ"] is not None: rates["40HQ"] -= 210
-            thc_inc = False
+            print("      -> [Synconhub] THC đã included hoặc không xuất hiện -> ghi INCLUDED O.THC vào remark.")
 
         print(f"      -> [Synconhub] XONG! Cước: {rates}")
         # THÊM BIẾN VALID VÀO LÚC RETURN
@@ -1324,7 +1320,7 @@ def run_elines(pol, pod, pod_country):
                 print(f"      [Debug] Lỗi rình popup Cảng: {e}")
 
             str_ts = " + ".join(ts_ports) if ts_ports else "DIRECT"
-            str_etd_fmt = c["etd_dt"].strftime("%d-%b")
+            str_etd_fmt = f"{c['etd_dt'].day}-{c['etd_dt'].strftime('%b')}"
             str_tt_fmt = str(c["tt_days"])
             
             info_str = f"{vessel_name} / ETD: {str_etd_fmt} / Transit time: {str_tt_fmt} Days / Transshipment Port: {str_ts}"
@@ -1665,10 +1661,8 @@ def generate_remark(thc_inc, ows, manifest_fee, pod, source, is_surcharge_error=
             
     if ows: lst.append("OWS")
     rem = "SUBJECT TO " + ", ".join(lst)
-    if thc_inc: rem += " (INCLUDED THC)"
-    rem += f" ({source})"
+    if thc_inc: rem += ", INCLUDED O.THC"
     
-    # Kẹp thêm cảnh báo nếu bị lỗi mất Surcharge
     if is_surcharge_error:
         rem += " (SURCHARGE ERROR)"
         
@@ -1731,11 +1725,7 @@ for row in danh_sach_dong:
 
     # --- BẮT ĐẦU THÊM: Chuẩn hóa tên cảng đặc biệt COSCO ---
     PORT_MAPPING = {
-        "FOS SUR MER": "FOS",
-        "GENOA": "GENOVA",
-        "NAPOLI": "NAPLES",
         "TIANJIN": "XINGANG",
-        "COCHIN": "KOCHI"
     }
     
     # Ép kiểu viết hoa, xóa khoảng trắng thừa và tra từ điển

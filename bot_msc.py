@@ -554,18 +554,21 @@ def format_etd_display(dates_list):
     if not dates_list: return ""
     dates_list.sort()
     
+    def _fmt(d):
+        return f"{d.day}-{d.strftime('%b')}"
+    
     if len(dates_list) == 1: 
-        return dates_list[0].strftime("%#d-%b")
+        return _fmt(dates_list[0])
         
     if len(dates_list) == 2:
-        return f"{dates_list[0].strftime('%#d-%b')} & {dates_list[1].strftime('%#d-%b')}"
+        return f"{_fmt(dates_list[0])} & {_fmt(dates_list[1])}"
         
     months = set([d.month for d in dates_list])
     if len(months) == 1:
-        days = [d.strftime("%#d") for d in dates_list]
+        days = [str(d.day) for d in dates_list]
         return f"{', '.join(days[:-1])}, {days[-1]}-{dates_list[-1].strftime('%b')}"
     else:
-        return ", ".join([d.strftime("%#d-%b") for d in dates_list])
+        return ", ".join([_fmt(d) for d in dates_list])
 
 def get_validity_from_row(driver, row_idx):
     """Lấy ngày kết thúc Shipping Window từ chính dòng (Row) đó"""
@@ -615,7 +618,7 @@ def is_dong_nai_card(driver):
     """)
 
 
-def process_schedule_logic(driver):
+def process_schedule_logic(driver, ts_ports_str="DIRECT"):
     """Đọc bảng Schedule, lọc ETD >= 4 ngày và LOẠI BỎ TÀU TRÙNG LẶP"""
     schedule_raw = driver.execute_script("""
         var shadow = document.querySelector('mymsc-instantquote-app').shadowRoot;
@@ -663,10 +666,10 @@ def process_schedule_logic(driver):
 
     # 3. Format chuỗi hiển thị cho cột O
     vessel_details = []
+    ts_text = ts_ports_str if ts_ports_str else "DIRECT"
     for v in unique_vessels:
-        etd_str = v['dt'].strftime("%#d-%b")
-        # Format chuẩn: TÊN VOYAGE / ETD: DATE / Transit time: X Days
-        vessel_details.append(f"{v['vessel']} {v['voyage']} / ETD: {etd_str} / Transit time: {v['tt']}")
+        etd_str = f"{v['dt'].day}-{v['dt'].strftime('%b')}"
+        vessel_details.append(f"{v['vessel']} {v['voyage']} / ETD: {etd_str} / Transit time: {v['tt']} / Transshipment Port: {ts_text}")
     
     # 4. Lấy dữ liệu cho cột I và J (Lấy ETD đầu và cuối của danh sách đã lọc)
     unique_dates = sorted(list(set([v['dt'] for v in unique_vessels])))
@@ -675,9 +678,9 @@ def process_schedule_logic(driver):
     tt_display = f"{min(tts)}-{max(tts)}" if min(tts) != max(tts) else f"{min(tts)}"
     
     return {
-        'etd_text': format_etd_display(unique_dates[:3]), # Max 3 ETD cho cột I
+        'etd_text': format_etd_display(unique_dates[:3]),
         'tt_text': tt_display,
-        'full_vessels': "\n".join(vessel_details) # Dữ liệu cho cột O (đã được lọc trùng)
+        'full_vessels': "\n".join(vessel_details)
     }
 
 def parse_amount(amount_raw: str) -> tuple:
@@ -830,15 +833,16 @@ def scrape_all_results(driver, pod_country: str = "") -> dict | None:
                 print(f"Checking row {i}: {pol_name} | {equipment}")
                 if click_show_details_on_row(driver, i):
                     if click_schedule_tab(driver):
-                        sched = process_schedule_logic(driver)
+                        click_quote_conditions_tab(driver)
+                        ts_ports = parse_transshipment_ports(driver)
+                        click_schedule_tab(driver)
+                        sched = process_schedule_logic(driver, ts_ports_str=ts_ports or "DIRECT")
                         if not sched:
                             print(f"Window {w_idx+1}: Schedule invalid. Skipping entire window.")
                             close_popup(driver)
                             break 
 
                         print("Schedule OK. Fetching data...")
-                        click_quote_conditions_tab(driver)
-                        ts_ports = parse_transshipment_ports(driver)
 
                         freetime_val = "14 COMBINED" if is_india else (click_freetime_tab(driver) and parse_freetime_pod(driver) or parse_freetime_pod(driver))
                         
@@ -969,6 +973,11 @@ if __name__ == "__main__":
         print(f"Error opening {file_path}: {e}")
         exit()
 
+    # Port mapping: Excel name → MSC search name
+    MSC_PORT_MAPPING = {
+        "TIANJIN": "XINGANG",
+    }
+
     for row_idx in range(2, sheet.max_row + 1):
         carrier = str(sheet[f"E{row_idx}"].value or "").strip().upper()
         if carrier != "MSC": continue
@@ -982,6 +991,10 @@ if __name__ == "__main__":
         if not pol or not pod: continue
         if FILTER_POL and pol.upper() != FILTER_POL: continue
         if FILTER_POD and pod.upper() != FILTER_POD: continue
+
+        # Áp dụng port mapping cho web search (giữ tên gốc trong Excel)
+        pol = MSC_PORT_MAPPING.get(pol.upper(), pol)
+        pod = MSC_PORT_MAPPING.get(pod.upper(), pod)
 
         print("-" * 40)
         print(f"Processing row {row_idx}: {pol} -> {pod} ({country})")

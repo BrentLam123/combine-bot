@@ -914,7 +914,7 @@ def build_schedule_entries_from_api(api_results, pol_code, valid_to_str=""):
                             ts_ports.append(port_name)
             ts_text = " + ".join(ts_ports) if ts_ports else "DIRECT"
 
-            etd_str = etd_dt.strftime("%d-%b")
+            etd_str = f"{etd_dt.day}-{etd_dt.strftime('%b')}"
             entries.append({
                 "etd_dt": etd_dt,
                 "etd_str": etd_str,
@@ -995,9 +995,9 @@ def apply_etd_rules_kmtc(schedule_list):
     elif num == 2: str_etd = f"{selected[0]['etd_str']} & {selected[1]['etd_str']}"
     else:
         if all(s["etd_dt"].month == selected[0]["etd_dt"].month for s in selected):
-            d1 = selected[0]["etd_dt"].strftime("%d")
-            d2 = selected[1]["etd_dt"].strftime("%d")
-            d3 = selected[2]["etd_dt"].strftime("%d-%b")
+            d1 = str(selected[0]["etd_dt"].day)
+            d2 = str(selected[1]["etd_dt"].day)
+            d3 = f"{selected[2]['etd_dt'].day}-{selected[2]['etd_dt'].strftime('%b')}"
             str_etd = f"{d1}, {d2}, {d3}"
         else:
             str_etd = " & ".join(s["etd_str"] for s in selected)
@@ -1020,7 +1020,8 @@ def parse_freight_popup():
             m = re.search(r'Freight Validity Period\s*:\s*[\d-]+\s*~\s*([\d-]+)', p.text)
             if m:
                 try:
-                    valid_to = datetime.strptime(m.group(1).strip(), "%Y-%m-%d").strftime("%d-%b")
+                    _vdt = datetime.strptime(m.group(1).strip(), "%Y-%m-%d")
+                    valid_to = f"{_vdt.day}-{_vdt.strftime('%b')}"
                 except:
                     valid_to = m.group(1).strip()
                 break

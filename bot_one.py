@@ -139,7 +139,8 @@ def get_valid_date(etd_dates):
     elif day <= 14: valid_day = 14
     elif day <= 21: valid_day = 21
     else:           valid_day = calendar.monthrange(latest_etd.year, latest_etd.month)[1]
-    return datetime(latest_etd.year, latest_etd.month, valid_day).strftime("%d-%b")
+    vd = datetime(latest_etd.year, latest_etd.month, valid_day)
+    return f"{vd.day}-{vd.strftime('%b')}"
 
 def js_click(element):
     driver.execute_script("arguments[0].click();", element)
@@ -486,6 +487,19 @@ def switch_tab_trick_until_clear(tabs, rounds=5, pause=0.2):
     print("🔄 Switch tab ép React render + đợi hết popup loading...")
     loader_xpath = "//div[contains(@class, 'CarouselLoadingPopup_progress-container') or contains(@class, 'ajax-progress')]"
 
+    # Phase 0: Trigger focus/visibility events trên mỗi tab
+    for tab in tabs:
+        driver.switch_to.window(tab)
+        try:
+            driver.execute_script("""
+                window.dispatchEvent(new Event('focus'));
+                document.dispatchEvent(new Event('focus'));
+                document.dispatchEvent(new Event('visibilitychange'));
+            """)
+        except:
+            pass
+        time.sleep(0.1)
+
     # Phase 1: đảo nhanh để React kịp văng popup lên màn hình
     for _ in range(rounds):
         for tab in tabs:
@@ -510,11 +524,20 @@ def switch_tab_trick_until_clear(tabs, rounds=5, pause=0.2):
         "//input[@placeholder='Select an Equipment Type']"
         " | //div[contains(@class,'RouteInput_wrap-error-loading')]"
         " | //p[contains(text(),'No port pair')]"
+        " | //input[@type='password']"
     )
     for i, tab in enumerate(tabs):
         driver.switch_to.window(tab)
+        # Kiểm tra nếu trang đang ở login page → skip chờ form
         try:
-            WebDriverWait(driver, 30).until(
+            cur_url = driver.current_url or ""
+            if "login" in cur_url.lower() or "auth" in cur_url.lower() or "sso" in cur_url.lower():
+                print(f"  ⚠️ Tab {i+1}: đang ở trang login — skip chờ form")
+                continue
+        except:
+            pass
+        try:
+            WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.XPATH, PAGE_READY_XPATH))
             )
             print(f"  ✅ Tab {i+1}: form sẵn sàng")
@@ -527,12 +550,12 @@ def switch_tab_trick_until_clear(tabs, rounds=5, pause=0.2):
                     break
             driver.switch_to.window(tab)
             try:
-                WebDriverWait(driver, 15).until(
+                WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.XPATH, PAGE_READY_XPATH))
                 )
                 print(f"  ✅ Tab {i+1}: form sẵn sàng (sau retry)")
             except TimeoutException:
-                print(f"  ⚠️ Tab {i+1}: timeout sau 45s — tiếp tục (sẽ handle trong scrape_tab)")
+                print(f"  ⚠️ Tab {i+1}: timeout — tiếp tục (sẽ handle trong scrape_tab)")
 
     print("✅ Tất cả tab sạch popup!")
 
@@ -777,7 +800,7 @@ def scrape_tab(row_data):
                         continue
                     # ── Chỉ lưu aria-label, KHÔNG lưu element ──
                     chosen_aria_label = aria_label
-                    chosen_date_str = etd_date.strftime('%d-%b')
+                    chosen_date_str = f"{etd_date.day}-{etd_date.strftime('%b')}"
                     print(f"  ✅ Chọn ngày còn chỗ: {chosen_date_str}")
                     break
                 except Exception:
@@ -815,7 +838,7 @@ def scrape_tab(row_data):
                         ).date()
                         if etd_date < min_etd_date: continue
                         chosen_aria_label = aria_label
-                        chosen_date_str = etd_date.strftime('%d-%b')
+                        chosen_date_str = f"{etd_date.day}-{etd_date.strftime('%b')}"
                         print(f"  ✅ Chọn ngày còn chỗ (sau wait): {chosen_date_str}")
                         break
                     except Exception: continue
@@ -877,7 +900,7 @@ def scrape_tab(row_data):
                             ).date()
                             if etd_date < min_etd_date: continue
                             chosen_aria_label = aria_label
-                            chosen_date_str = etd_date.strftime('%d-%b')
+                            chosen_date_str = f"{etd_date.day}-{etd_date.strftime('%b')}"
                             print(f"  ✅ Chọn ngày còn chỗ (tháng sau): {chosen_date_str}")
                             break
                         except Exception: continue
@@ -1017,7 +1040,7 @@ def scrape_tab(row_data):
         return {"POL": row_data[2], "POD": row_data[3], "Status": "No Valid ETD"}
 
     # Format Excel
-    etd_strs = [c["etd"].strftime("%d-%b").lstrip("0") for c in final_sels]
+    etd_strs = [f"{c['etd'].day}-{c['etd'].strftime('%b')}" for c in final_sels]
     if len(etd_strs) == 1:
         etd_excel = etd_strs[0]
     elif len(etd_strs) == 2:
@@ -1051,7 +1074,7 @@ def scrape_tab(row_data):
         return None
     
     # Format Excel
-    etd_strs = [c["etd"].strftime("%d-%b").lstrip("0") for c in final_sels]
+    etd_strs = [f"{c['etd'].day}-{c['etd'].strftime('%b')}" for c in final_sels]
     if len(etd_strs) == 1:
         etd_excel = etd_strs[0]
     elif len(etd_strs) == 2:
@@ -1339,8 +1362,8 @@ def scrape_tab(row_data):
         vessel_final = vessels_dict.get(pol_name, "TBA")
         ts_ports = list(ports_in_route[1:-1])
 
-    vessel_excel = f"{vessel_final} / ETD: {target_data['etd'].strftime('%d-%b').lstrip('0')} / Transit time: {target_data['transit']} Days"
     ts_excel     = " + ".join(ts_ports) if ts_ports else "DIRECT"
+    vessel_excel = f"{vessel_final} / ETD: {target_data['etd'].day}-{target_data['etd'].strftime('%b')} / Transit time: {target_data['transit']} Days / Transshipment Port: {ts_excel}"
 
     print(f"  ✅ Xong: {row_data[2]} → {row_data[3]}")
     print(f"  💰 DRY20:{final_prices['DRY 20']:,.0f} | DRY40:{final_prices['DRY 40']:,.0f} | DRY40H:{final_prices['DRY 40H']:,.0f} USD")
@@ -1456,6 +1479,16 @@ if FILTER_POD:
 raw_data = df_filtered.dropna(
     subset=[df_filtered.columns[2], df_filtered.columns[3]]
 ).values.tolist()
+
+# Port mapping: Excel name → ONE search name
+ONE_PORT_MAPPING = {
+    "TIANJIN": "XINGANG",
+}
+# Áp dụng mapping cho POD (row[3]) trong raw_data — giữ tên gốc trong Excel output
+for _rd in raw_data:
+    _pod_up = str(_rd[3]).strip().upper()
+    if _pod_up in ONE_PORT_MAPPING:
+        _rd[3] = ONE_PORT_MAPPING[_pod_up]
 
 print(f"📋 Sau khi lọc hãng ONE: {len(raw_data)} tuyến (bỏ qua các hãng khác)")
 BATCH_SIZE    = 28 # Số tab tối đa mỗi batch (có thể điều chỉnh tuỳ theo hiệu năng máy và web)

@@ -1,4 +1,4 @@
-﻿from selenium import webdriver
+from selenium import webdriver
 from selenium.webdriver.edge.options import Options
 from selenium.webdriver.edge.service import Service
 from selenium.webdriver.common.by import By
@@ -923,6 +923,14 @@ def scrape_multi_etd_and_save(row_index, ws, pol_text_excel):
 
         cards = driver.find_elements(By.CSS_SELECTOR, "article.card-route-horizontal")
         if not cards:
+            # Kiểm tra nếu có thông báo "no space" trên trang kết quả
+            page_text_upper = driver.execute_script("return document.body.innerText;").upper()
+            if "NO SPACE" in page_text_upper or "FULLY BOOKED" in page_text_upper:
+                print("      ⚠️ No Space (tàu đã đầy chỗ)!")
+                ws.cell(row=row_index, column=6).value = "No Space"
+                try: wb.save(excel_path)
+                except: pass
+                return "NO_SPACE"
             print("      ⚠️ Sold Out toàn bộ (Không có chuyến tàu nào)!")
             ws.cell(row=row_index, column=6).value = "Sold Out"
             try: wb.save(excel_path)
@@ -1734,6 +1742,11 @@ try:
     is_first_run_in_session = True
     previous_pol = ""
 
+    # Port mapping: Excel name → carrier search name
+    CMA_PORT_MAPPING = {
+        "TIANJIN": "XINGANG",
+    }
+
     for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         # ✅ FILTER THEO TARGET ROW
         if target_row and i != target_row:
@@ -1746,6 +1759,9 @@ try:
         if carrier not in {"CMA", "ANL", "CNC", "APL"}: continue
         if FILTER_POL and pol_excel.upper() != FILTER_POL: continue
         if FILTER_POD and pod.upper() != FILTER_POD: continue
+
+        # Áp dụng port mapping cho POD (giữ pod_excel_orig để ghi Excel)
+        pod = CMA_PORT_MAPPING.get(pod.upper(), pod)
 
         # Phân loại logic Intra-Asia
         is_hcm = "HO CHI MINH" in pol_excel.upper() or "VNSGN" in pol_excel.upper()
